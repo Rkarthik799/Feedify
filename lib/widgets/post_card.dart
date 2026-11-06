@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/post.dart';
 import '../providers/post_provider.dart';
+import '../theme/app_theme.dart';
+import 'comments_sheet.dart';
+import 'feed_identity.dart';
 import 'media_preview_tile.dart';
 
 class PostCard extends StatelessWidget {
@@ -14,238 +16,206 @@ class PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final PostProvider provider = context.read<PostProvider>();
-    final double screenWidth = MediaQuery.sizeOf(context).width;
-    final int mediaColumns = _mediaColumnCount(screenWidth);
-
-    return TweenAnimationBuilder<double>(
-      key: ValueKey<String>('post-${post.id}'),
-      duration: Duration(milliseconds: 260 + (index * 45).clamp(0, 360)),
-      tween: Tween<double>(begin: 0, end: 1),
-      curve: Curves.easeOutCubic,
-      builder: (BuildContext context, double value, Widget? child) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 16 * (1 - value)),
-            child: child,
-          ),
-        );
-      },
-      child: Card(
-        elevation: 0,
-        margin: EdgeInsets.symmetric(
-          horizontal: (screenWidth * 0.035).clamp(8, 16),
-          vertical: 8,
-        ),
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: Colors.grey.shade200),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Container(
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: <Color>[Color(0xFFFF7A18), Color(0xFFFF3D81)],
-                      ),
-                    ),
-                    padding: const EdgeInsets.all(2),
-                    child: const CircleAvatar(
-                      radius: 18,
-                      backgroundColor: Colors.white,
-                      child: Icon(Icons.person),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Text(
-                          'You',
-                          style: TextStyle(fontWeight: FontWeight.w700),
+    final provider = context.read<PostProvider>();
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const UserAvatar(),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'You',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
                         ),
+                      ),
+                      Text(
+                        formatPostTime(post.createdAt),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                Tooltip(
+                  message: post.visibility.label,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          post.visibility.icon,
+                          size: 14,
+                          color: AppColors.muted,
+                        ),
+                        const SizedBox(width: 5),
                         Text(
-                          _formatPostTime(post.createdAt),
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
+                          post.visibility.label,
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
                   ),
-                  _VisibilityBadge(visibility: post.visibility),
-                ],
+                ),
+              ],
+            ),
+            if (post.content.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text.rich(
+                TextSpan(children: _contentSpans(post.content)),
+                style: const TextStyle(fontSize: 15, height: 1.65),
               ),
-              if (post.content.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 12),
+            ],
+            if (post.media.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = post.media.length == 1
+                      ? 1
+                      : (constraints.maxWidth < 350
+                            ? 2
+                            : post.media.length.clamp(2, 3));
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: post.media.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
+                      childAspectRatio: post.media.length == 1 ? 1.3 : 1,
+                    ),
+                    itemBuilder: (_, index) => MediaPreviewTile(
+                      media: post.media[index],
+                      aspectRatio: post.media.length == 1 ? 1.3 : 1,
+                    ),
+                  );
+                },
+              ),
+            ],
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 12,
+              children: [
                 Text(
-                  post.content,
-                  style: const TextStyle(fontSize: 15, height: 1.4),
+                  post.isLiked ? '1 like' : 'Be the first to like this',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Text(
+                  '${post.commentCount} ${post.commentCount == 1 ? 'comment' : 'comments'}',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
-              if (post.media.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 12),
-                GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  shrinkWrap: true,
-                  itemCount: post.media.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: mediaColumns,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
+            ),
+            const Divider(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () => provider.toggleLike(post.id),
+                    style: TextButton.styleFrom(
+                      foregroundColor: post.isLiked
+                          ? const Color(0xFFCB4B65)
+                          : AppColors.muted,
+                      minimumSize: const Size(0, 44),
+                    ),
+                    icon: Icon(
+                      post.isLiked
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      size: 20,
+                    ),
+                    label: Text(post.isLiked ? 'Liked' : 'Like'),
                   ),
-                  itemBuilder: (_, int mediaIndex) {
-                    return MediaPreviewTile(media: post.media[mediaIndex]);
-                  },
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () => showPostComments(context, post.id),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.muted,
+                      minimumSize: const Size(0, 44),
+                    ),
+                    icon: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      size: 19,
+                    ),
+                    label: const Text('Comment'),
+                  ),
                 ),
               ],
+            ),
+            if (post.comments.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Divider(color: Colors.grey.shade200, height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: <Widget>[
-                  _ActionPill(
-                    label: post.isLiked ? 'Liked' : 'Like',
-                    icon: post.isLiked ? Icons.favorite : Icons.favorite_border,
-                    iconColor: post.isLiked ? Colors.red : Colors.grey.shade700,
-                    onTap: () => provider.toggleLike(post.id),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => showPostComments(context, post.id),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  _ActionPill(
-                    label: 'Comment (${post.commentCount})',
-                    icon: Icons.mode_comment_outlined,
-                    iconColor: Colors.grey.shade700,
-                    onTap: () => provider.addComment(post.id),
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '${post.comments.last.author}  ',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        TextSpan(text: post.comments.last.content),
+                      ],
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ],
+                ),
               ),
             ],
-          ),
+          ],
         ),
       ),
     );
   }
 
-  String _formatPostTime(DateTime dateTime) {
-    final Duration diff = DateTime.now().difference(dateTime);
-
-    if (diff.inSeconds < 10) {
-      return 'Just now';
-    }
-    if (diff.inMinutes < 1) {
-      return '${diff.inSeconds}s ago';
-    }
-    if (diff.inHours < 1) {
-      return '${diff.inMinutes}m ago';
-    }
-    if (diff.inDays < 1) {
-      return '${diff.inHours}h ago';
-    }
-
-    return DateFormat('MMM d, h:mm a').format(dateTime);
-  }
-
-  int _mediaColumnCount(double width) {
-    if (width < 360) {
-      return 2;
-    }
-    if (width < 700) {
-      return 3;
-    }
-    return 4;
-  }
-}
-
-class _ActionPill extends StatelessWidget {
-  const _ActionPill({
-    required this.label,
-    required this.icon,
-    required this.iconColor,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final Color iconColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFE1EDFF),
-      borderRadius: BorderRadius.circular(26),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(26),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icon, size: 18, color: iconColor),
-              const SizedBox(width: 6),
-              Text(label),
-            ],
+  List<TextSpan> _contentSpans(String content) {
+    final spans = <TextSpan>[];
+    final pattern = RegExp(r'[#@][a-zA-Z0-9_]+');
+    var end = 0;
+    for (final match in pattern.allMatches(content)) {
+      if (match.start > end) {
+        spans.add(TextSpan(text: content.substring(end, match.start)));
+      }
+      spans.add(
+        TextSpan(
+          text: match.group(0),
+          style: const TextStyle(
+            color: AppColors.primary,
+            fontWeight: FontWeight.w600,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _VisibilityBadge extends StatelessWidget {
-  const _VisibilityBadge({required this.visibility});
-
-  final PostVisibility visibility;
-
-  @override
-  Widget build(BuildContext context) {
-    IconData icon;
-    String text;
-    Color bg;
-
-    switch (visibility) {
-      case PostVisibility.public:
-        icon = Icons.public;
-        text = 'Public';
-        bg = const Color(0xFFD9FFF1);
-      case PostVisibility.friends:
-        icon = Icons.group;
-        text = 'Friends';
-        bg = const Color(0xFFDCE7FF);
-      case PostVisibility.onlyMe:
-        icon = Icons.lock;
-        text = 'Only Me';
-        bg = const Color(0xFFFFE7D6);
+      );
+      end = match.end;
     }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: 14),
-          const SizedBox(width: 4),
-          Text(
-            text,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
+    if (end < content.length) spans.add(TextSpan(text: content.substring(end)));
+    return spans;
   }
 }
