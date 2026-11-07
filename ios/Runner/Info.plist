@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Select photos and videos to share in your posts and stories.</string>
 	<key>CFBundleDisplayName</key>
 	<string>Feedify</string>
 	<key>CFBundleExecutable</key>

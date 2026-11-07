@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/post_provider.dart';
+import '../providers/story_provider.dart';
 import '../widgets/post_card.dart';
+import '../widgets/story_tray.dart';
 import 'create_post_screen.dart';
 
 class FeedScreen extends StatelessWidget {
   const FeedScreen({super.key});
 
   Future<void> _reload(BuildContext context) async {
-    await context.read<PostProvider>().initialize();
+    await Future.wait<void>(<Future<void>>[
+      context.read<PostProvider>().initialize(),
+      context.read<StoryProvider>().initialize(),
+    ]);
   }
 
   @override
@@ -68,51 +73,40 @@ class FeedScreen extends StatelessWidget {
                 end: Alignment.bottomCenter,
               ),
             ),
-            child: provider.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : provider.posts.isEmpty
-                ? RefreshIndicator(
-                    onRefresh: () => _reload(context),
-                    child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: <Widget>[
-                        SizedBox(
-                          height: MediaQuery.sizeOf(context).height * 0.25,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const <Widget>[
-                              Icon(Icons.post_add_outlined, size: 56),
-                              SizedBox(height: 12),
-                              Text(
-                                'No posts yet. Create your first local post.',
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : RefreshIndicator(
-                    onRefresh: () => _reload(context),
-                    child: ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: EdgeInsets.only(
-                        top: 8,
-                        bottom: 92 + bottomInset,
+            child: RefreshIndicator(
+              onRefresh: () => _reload(context),
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.only(top: 8, bottom: 92 + bottomInset),
+                itemCount: provider.isLoading || provider.posts.isEmpty
+                    ? 2
+                    : provider.posts.length + 1,
+                itemBuilder: (_, int index) {
+                  if (index == 0) {
+                    return const StoryTray();
+                  }
+                  if (provider.isLoading) {
+                    return const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  if (provider.posts.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'No posts yet. Create your first local post.',
+                        textAlign: TextAlign.center,
                       ),
-                      itemCount: provider.posts.length,
-                      itemBuilder: (_, int index) {
-                        return PostCard(
-                          post: provider.posts[index],
-                          index: index,
-                        );
-                      },
-                    ),
-                  ),
+                    );
+                  }
+                  return PostCard(
+                    post: provider.posts[index - 1],
+                    index: index - 1,
+                  );
+                },
+              ),
+            ),
           ),
         );
       },
