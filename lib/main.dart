@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'providers/post_provider.dart';
 import 'providers/story_provider.dart';
 import 'screens/feed_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const MainApp());
@@ -27,18 +28,7 @@ class MainApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Feedify',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0057FF)),
-          scaffoldBackgroundColor: const Color(0xFFF3F6FF),
-          appBarTheme: const AppBarTheme(
-            centerTitle: false,
-            foregroundColor: Color(0xFF0A1640),
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-          ),
-          cardTheme: const CardThemeData(color: Colors.white),
-          useMaterial3: true,
-        ),
+        theme: buildAppTheme(),
         home: const FeedScreen(),
       ),
     );

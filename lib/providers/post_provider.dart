@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -19,12 +20,17 @@ enum MediaPickStatus {
 class PostProvider extends ChangeNotifier {
   static const String _storageKey = 'local_user_posts';
   static const String _legacyStorageKey = 'local_posts';
+  static const String _commentsStorageKey = 'post_comments_v1';
+  static const int maxCommentLength = 1000;
 
   final ImagePicker _picker = ImagePicker();
   final Uuid _uuid = const Uuid();
 
   late final List<Post> _staticPosts = _buildStaticPosts();
   List<Post> _userPosts = <Post>[];
+  Map<String, List<PostComment>> _comments = <String, List<PostComment>>{};
+  bool _isSavingComment = false;
+  String? _loadError;
   final List<PostMedia> _draftMedia = <PostMedia>[];
   String _draftText = '';
   PostVisibility _draftVisibility = PostVisibility.public;
@@ -36,13 +42,18 @@ class PostProvider extends ChangeNotifier {
   List<Post> get posts {
     final List<Post> merged = <Post>[..._userPosts, ..._staticPosts];
     merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return List<Post>.unmodifiable(merged);
+    return List<Post>.unmodifiable(
+      merged.map(
+        (post) => post.copyWith(comments: _comments[post.id] ?? post.comments),
+      ),
+    );
   }
 
   List<PostMedia> get draftMedia => List<PostMedia>.unmodifiable(_draftMedia);
   String get draftText => _draftText;
   PostVisibility get draftVisibility => _draftVisibility;
   bool get isLoading => _isLoading;
+  String? get loadError => _loadError;
   bool get isSubmitting => _isSubmitting;
   double get uploadProgress => _uploadProgress;
   int get uploadedCount => _uploadedCount;
@@ -56,36 +67,55 @@ class PostProvider extends ChangeNotifier {
     }
 
     _isLoading = true;
+    _loadError = null;
     notifyListeners();
 
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final List<String> serializedPosts =
-        prefs.getStringList(_storageKey) ?? <String>[];
-    bool didSanitize = false;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? storedComments = prefs.getString(_commentsStorageKey);
+      if (storedComments != null) {
+        final decoded = jsonDecode(storedComments) as Map<String, dynamic>;
+        _comments = decoded.map(
+          (id, items) => MapEntry(
+            id,
+            List<PostComment>.unmodifiable(
+              (items as List<dynamic>).map(
+                (item) => PostComment.fromMap(item as Map<String, dynamic>),
+              ),
+            ),
+          ),
+        );
+      }
+      final List<String> serializedPosts =
+          prefs.getStringList(_storageKey) ?? <String>[];
+      bool didSanitize = false;
 
-    if (serializedPosts.isNotEmpty) {
-      _userPosts = serializedPosts
-          .map(Post.fromJson)
-          .where(_isUserGeneratedPost)
-          .toList();
-      didSanitize = _userPosts.length != serializedPosts.length;
-    } else {
-      final List<String> legacyPosts =
-          prefs.getStringList(_legacyStorageKey) ?? <String>[];
-      if (legacyPosts.isNotEmpty) {
-        _userPosts = legacyPosts
+      if (serializedPosts.isNotEmpty) {
+        _userPosts = serializedPosts
             .map(Post.fromJson)
             .where(_isUserGeneratedPost)
             .toList();
-        didSanitize = true;
+        didSanitize = _userPosts.length != serializedPosts.length;
+      } else {
+        final List<String> legacyPosts =
+            prefs.getStringList(_legacyStorageKey) ?? <String>[];
+        if (legacyPosts.isNotEmpty) {
+          _userPosts = legacyPosts
+              .map(Post.fromJson)
+              .where(_isUserGeneratedPost)
+              .toList();
+          didSanitize = true;
+        }
       }
+      if (didSanitize) {
+        await _persistPosts();
+      }
+    } catch (_) {
+      _loadError = 'Could not load saved activity. Please try again.';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-    if (didSanitize) {
-      await _persistPosts();
-    }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
   void updateDraftText(String value) {
@@ -150,33 +180,37 @@ class PostProvider extends ChangeNotifier {
     _uploadedCount = 0;
     notifyListeners();
 
-    if (_draftMedia.isNotEmpty) {
-      await _simulateUpload();
+    try {
+      if (_draftMedia.isNotEmpty) {
+        await _simulateUpload();
+      }
+
+      final String trimmedText = _draftText.trim();
+      final List<String> hashtags = _extractTokens(trimmedText, '#');
+      final List<String> mentions = _extractTokens(trimmedText, '@');
+
+      final Post post = Post(
+        id: _uuid.v4(),
+        content: trimmedText,
+        media: List<PostMedia>.from(_draftMedia),
+        visibility: _draftVisibility,
+        createdAt: DateTime.now(),
+        hashtags: hashtags,
+        mentions: mentions,
+      );
+
+      final updatedPosts = <Post>[post, ..._userPosts];
+      await _persistPosts(posts: updatedPosts);
+      _userPosts = updatedPosts;
+      resetDraft();
+
+      return true;
+    } finally {
+      _isSubmitting = false;
+      _uploadProgress = 0;
+      _uploadedCount = 0;
+      notifyListeners();
     }
-
-    final String trimmedText = _draftText.trim();
-    final List<String> hashtags = _extractTokens(trimmedText, '#');
-    final List<String> mentions = _extractTokens(trimmedText, '@');
-
-    final Post post = Post(
-      id: _uuid.v4(),
-      content: trimmedText,
-      media: List<PostMedia>.from(_draftMedia),
-      visibility: _draftVisibility,
-      createdAt: DateTime.now(),
-      hashtags: hashtags,
-      mentions: mentions,
-    );
-
-    _userPosts.insert(0, post);
-    await _persistPosts();
-    resetDraft();
-
-    _isSubmitting = false;
-    _uploadProgress = 0;
-    _uploadedCount = 0;
-    notifyListeners();
-    return true;
   }
 
   void resetDraft() {
@@ -220,39 +254,54 @@ class PostProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> addComment(String postId) async {
-    bool updatedUserPost = false;
-    final int userIndex = _userPosts.indexWhere((item) => item.id == postId);
-    if (userIndex != -1) {
-      final Post current = _userPosts[userIndex];
-      _userPosts[userIndex] = current.copyWith(
-        commentCount: current.commentCount + 1,
-      );
-      updatedUserPost = true;
-    } else {
-      final int staticIndex = _staticPosts.indexWhere(
-        (item) => item.id == postId,
-      );
-      if (staticIndex == -1) {
-        return;
-      }
-      final Post current = _staticPosts[staticIndex];
-      _staticPosts[staticIndex] = current.copyWith(
-        commentCount: current.commentCount + 1,
-      );
+  Future<bool> addComment(String postId, String content) async {
+    final text = content.trim();
+    if (text.isEmpty ||
+        text.length > maxCommentLength ||
+        _isSavingComment ||
+        _isLoading) {
+      return false;
     }
-    notifyListeners();
-    if (updatedUserPost) {
-      await _persistPosts();
+    final matches = posts.where((post) => post.id == postId);
+    if (matches.isEmpty) return false;
+
+    _isSavingComment = true;
+    try {
+      final updated = <String, List<PostComment>>{
+        ..._comments,
+        postId: List<PostComment>.unmodifiable([
+          ...matches.first.comments,
+          PostComment(id: _uuid.v4(), content: text, createdAt: DateTime.now()),
+        ]),
+      };
+      final prefs = await SharedPreferences.getInstance();
+      final saved = await prefs.setString(
+        _commentsStorageKey,
+        jsonEncode(
+          updated.map(
+            (id, comments) => MapEntry(
+              id,
+              comments.map((comment) => comment.toMap()).toList(),
+            ),
+          ),
+        ),
+      );
+      if (!saved) throw StateError('Could not save comment.');
+      _comments = updated;
+      notifyListeners();
+      return true;
+    } finally {
+      _isSavingComment = false;
     }
   }
 
-  Future<void> _persistPosts() async {
+  Future<void> _persistPosts({List<Post>? posts}) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final List<String> serialized = _userPosts
+    final List<String> serialized = (posts ?? _userPosts)
         .map((item) => item.toJson())
         .toList();
-    await prefs.setStringList(_storageKey, serialized);
+    final saved = await prefs.setStringList(_storageKey, serialized);
+    if (!saved) throw StateError('Could not save posts.');
   }
 
   List<String> _extractTokens(String text, String prefix) {

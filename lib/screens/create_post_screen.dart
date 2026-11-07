@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../models/post.dart';
 import '../providers/post_provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/feed_identity.dart';
 import '../widgets/media_preview_tile.dart';
 
 class CreatePostScreen extends StatefulWidget {
@@ -14,28 +16,22 @@ class CreatePostScreen extends StatefulWidget {
 }
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
-  static const List<String> _hashtags = <String>[
+  static const _hashtags = [
     '#flutter',
     '#coding',
     '#weekend',
     '#buildinpublic',
     '#mobiledev',
   ];
-
-  static const List<String> _mentions = <String>[
-    '@alex',
-    '@sam',
-    '@devteam',
-    '@fluttercommunity',
-  ];
-
+  static const _mentions = ['@alex', '@sam', '@devteam', '@fluttercommunity'];
   late final TextEditingController _controller;
 
   @override
   void initState() {
     super.initState();
-    final PostProvider provider = context.read<PostProvider>();
-    _controller = TextEditingController(text: provider.draftText);
+    _controller = TextEditingController(
+      text: context.read<PostProvider>().draftText,
+    );
   }
 
   @override
@@ -46,548 +42,468 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final double screenWidth = MediaQuery.sizeOf(context).width;
-    final double horizontalPadding = (screenWidth * 0.04).clamp(12, 20);
-    final int mediaColumns = _mediaColumnCount(screenWidth);
-
-    return Consumer<PostProvider>(
-      builder: (BuildContext context, PostProvider provider, Widget? child) {
-        return PopScope(
-          canPop: !provider.hasUnsavedChanges,
-          onPopInvokedWithResult: (bool didPop, Object? _) async {
-            if (didPop || !provider.hasUnsavedChanges) {
-              return;
-            }
-
-            final bool shouldDiscard = await _showDiscardDialog(context);
-            if (!context.mounted || !shouldDiscard) {
-              return;
-            }
-
-            provider.resetDraft();
-            Navigator.of(context).pop();
-          },
-          child: Scaffold(
-            extendBodyBehindAppBar: true,
-            appBar: AppBar(
-              title: const Text('Create Post'),
-              flexibleSpace: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: <Color>[Color(0xFF00C2FF), Color(0xFF6A11CB)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-              ),
-              actions: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF6B00),
-                      foregroundColor: Colors.white,
+    final provider = context.watch<PostProvider>();
+    return PopScope(
+      canPop: !provider.hasUnsavedChanges && !provider.isSubmitting,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || provider.isSubmitting) return;
+        final discard = await _showDiscardDialog();
+        if (!context.mounted || !discard) return;
+        provider.resetDraft();
+        if (context.mounted) Navigator.pop(context);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          toolbarHeight: 72,
+          title: const Text(
+            'Create a post',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+          ),
+          shape: const Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        body: SafeArea(
+          top: false,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 900;
+              final editor = _buildEditor(provider);
+              final settings = _buildSettings(provider);
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1080),
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(
+                      constraints.maxWidth < 600 ? 16 : 28,
                     ),
-                    onPressed: provider.canPost && !provider.isSubmitting
-                        ? () => _submitPost(context)
-                        : null,
-                    child: provider.isSubmitting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Post'),
+                    child: AbsorbPointer(
+                      absorbing: provider.isSubmitting,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Something worth sharing.',
+                            style: Theme.of(context).textTheme.headlineMedium,
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'A thought, a moment, a new perspective. Make it yours.',
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                          const SizedBox(height: 24),
+                          if (wide)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(flex: 2, child: editor),
+                                const SizedBox(width: 24),
+                                Expanded(child: settings),
+                              ],
+                            )
+                          else ...[
+                            editor,
+                            const SizedBox(height: 20),
+                            settings,
+                          ],
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ],
+              );
+            },
+          ),
+        ),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: AppColors.border)),
             ),
-            body: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: <Color>[Color(0xFFF3F6FF), Color(0xFFEAF1FF)],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: SafeArea(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    horizontalPadding,
-                    12,
-                    horizontalPadding,
-                    24,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      _AnimatedEntry(
-                        delayMs: 0,
-                        child: _SectionCard(
-                          title: 'Compose',
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Container(
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(
-                                    colors: <Color>[
-                                      Color(0xFFFF7A18),
-                                      Color(0xFFFF3D81),
-                                    ],
-                                  ),
-                                ),
-                                padding: const EdgeInsets.all(2),
-                                child: const CircleAvatar(
-                                  radius: 24,
-                                  backgroundColor: Colors.white,
-                                  child: Icon(Icons.person),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextField(
-                                  controller: _controller,
-                                  maxLines: null,
-                                  minLines: 4,
-                                  onChanged: provider.updateDraftText,
-                                  decoration: InputDecoration(
-                                    hintText: "What's on your mind?",
-                                    filled: true,
-                                    fillColor: Colors.grey.shade100,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Center(
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1024),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Saved on this device',
+                        style: TextStyle(color: AppColors.muted, fontSize: 12),
                       ),
-                      const SizedBox(height: 10),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          '${provider.draftText.length} chars',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
-                        ),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton.icon(
+                      onPressed: provider.canPost && !provider.isSubmitting
+                          ? _submitPost
+                          : null,
+                      icon: provider.isSubmitting
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.arrow_upward_rounded, size: 18),
+                      label: Text(
+                        provider.isSubmitting
+                            ? 'Publishing...'
+                            : 'Publish post',
                       ),
-                      if (provider.isSubmitting &&
-                          provider.draftMedia.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 10),
-                          child: _UploadProgressCard(
-                            uploadedCount: provider.uploadedCount,
-                            totalCount: provider.draftMedia.length,
-                            progress: provider.uploadProgress,
-                          ),
-                        ),
-                      const SizedBox(height: 14),
-                      _AnimatedEntry(
-                        delayMs: 70,
-                        child: _SectionCard(
-                          title: 'Visibility',
-                          child: DropdownButton<PostVisibility>(
-                            value: provider.draftVisibility,
-                            isExpanded: true,
-                            underline: const SizedBox.shrink(),
-                            items: const <DropdownMenuItem<PostVisibility>>[
-                              DropdownMenuItem(
-                                value: PostVisibility.public,
-                                child: Text('Public'),
-                              ),
-                              DropdownMenuItem(
-                                value: PostVisibility.friends,
-                                child: Text('Friends'),
-                              ),
-                              DropdownMenuItem(
-                                value: PostVisibility.onlyMe,
-                                child: Text('Only Me'),
-                              ),
-                            ],
-                            onChanged: (PostVisibility? value) {
-                              if (value != null) {
-                                provider.setDraftVisibility(value);
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      _AnimatedEntry(
-                        delayMs: 140,
-                        child: _SectionCard(
-                          title: 'Add Media',
-                          action: TextButton.icon(
-                            onPressed: () => _onPickMedia(context),
-                            icon: const Icon(Icons.photo_library_outlined),
-                            label: const Text('Gallery'),
-                          ),
-                          child: AnimatedOpacity(
-                            duration: const Duration(milliseconds: 280),
-                            opacity: provider.draftMedia.isEmpty ? 0.35 : 1,
-                            child: provider.draftMedia.isEmpty
-                                ? Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(
-                                        color: Colors.grey.shade300,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'No media selected. Add image/video from gallery.',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade700,
-                                      ),
-                                    ),
-                                  )
-                                : GridView.builder(
-                                    shrinkWrap: true,
-                                    physics:
-                                        const NeverScrollableScrollPhysics(),
-                                    itemCount: provider.draftMedia.length,
-                                    gridDelegate:
-                                        SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: mediaColumns,
-                                          mainAxisSpacing: 8,
-                                          crossAxisSpacing: 8,
-                                        ),
-                                    itemBuilder: (_, int index) {
-                                      return MediaPreviewTile(
-                                        media: provider.draftMedia[index],
-                                        onRemove: () =>
-                                            provider.removeDraftMediaAt(index),
-                                      );
-                                    },
-                                  ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      _AnimatedEntry(
-                        delayMs: 210,
-                        child: _SectionCard(
-                          title: 'Hashtag Suggestions',
-                          child: _SuggestionWrap(
-                            suggestions: _hashtags,
-                            onSelected: (String value) =>
-                                _insertSuggestion(provider, value),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      _AnimatedEntry(
-                        delayMs: 280,
-                        child: _SectionCard(
-                          title: 'Mention Suggestions',
-                          child: _SuggestionWrap(
-                            suggestions: _mentions,
-                            onSelected: (String value) =>
-                                _insertSuggestion(provider, value),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  int _mediaColumnCount(double width) {
-    if (width < 360) {
-      return 2;
-    }
-    if (width < 700) {
-      return 3;
-    }
-    return 4;
-  }
-
-  void _insertSuggestion(PostProvider provider, String suggestion) {
-    final String text = _controller.text.trimRight();
-    final String appended = text.isEmpty ? suggestion : '$text $suggestion';
-    _controller
-      ..text = appended
-      ..selection = TextSelection.fromPosition(
-        TextPosition(offset: appended.length),
-      );
-    provider.updateDraftText(appended);
-  }
-
-  Future<void> _submitPost(BuildContext context) async {
-    final PostProvider provider = context.read<PostProvider>();
-    final bool success = await provider.submitPost();
-
-    if (!context.mounted || !success) {
-      return;
-    }
-
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-      return;
-    }
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Posted locally.')));
-  }
-
-  Future<void> _onPickMedia(BuildContext context) async {
-    final PostProvider provider = context.read<PostProvider>();
-    final MediaPickStatus status = await provider.pickDraftMedia();
-    if (!context.mounted) {
-      return;
-    }
-
-    switch (status) {
-      case MediaPickStatus.success:
-      case MediaPickStatus.cancelled:
-        return;
-      case MediaPickStatus.permissionDenied:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please allow gallery permissions to select media.'),
+  Widget _buildEditor(PostProvider provider) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const UserAvatar(),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'You',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      'Sharing with ${provider.draftVisibility.label.toLowerCase()}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        );
-      case MediaPickStatus.permissionPermanentlyDenied:
-        final bool openSettings = await _showPermissionDialog(context);
-        if (openSettings) {
-          await openAppSettings();
-        }
-    }
-  }
-
-  Future<bool> _showDiscardDialog(BuildContext context) async {
-    final bool? decision = await showDialog<bool>(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: const Text('Discard this post?'),
-          content: const Text('You have unsaved changes in this draft.'),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Keep Editing'),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _controller,
+            minLines: 6,
+            maxLines: null,
+            enabled: !provider.isSubmitting,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(fontSize: 17, height: 1.7),
+            onChanged: provider.updateDraftText,
+            decoration: const InputDecoration(
+              hintText: "What's on your mind?",
+              labelText: 'Post content',
+              alignLabelWithHint: true,
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Discard'),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              '${provider.draftText.length} characters',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          const Divider(height: 32),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              Text(
+                'Photos & videos',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              TextButton.icon(
+                onPressed: _pickMedia,
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
+                label: const Text('Add media'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (provider.draftMedia.isEmpty)
+            InkWell(
+              onTap: _pickMedia,
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 28,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  children: [
+                    const Icon(
+                      Icons.photo_library_outlined,
+                      size: 30,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Bring your post to life',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Choose photos or videos from your gallery',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) => GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: provider.draftMedia.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: constraints.maxWidth < 420 ? 2 : 3,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                ),
+                itemBuilder: (_, index) => MediaPreviewTile(
+                  media: provider.draftMedia[index],
+                  onRemove: () => provider.removeDraftMediaAt(index),
+                ),
+              ),
+            ),
+          if (provider.isSubmitting && provider.draftMedia.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: provider.uploadProgress,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Preparing media ${provider.uploadedCount}/${provider.draftMedia.length}',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
-        );
-      },
-    );
-
-    return decision ?? false;
-  }
-
-  Future<bool> _showPermissionDialog(BuildContext context) async {
-    final bool? decision = await showDialog<bool>(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: const Text('Permission required'),
-          content: const Text(
-            'Gallery access is permanently denied. Open app settings to allow photos and videos.',
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Not now'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Open settings'),
-            ),
-          ],
-        );
-      },
-    );
-    return decision ?? false;
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child, this.action});
-
-  final String title;
-  final Widget child;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFC7D7FF)),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x1A3B2A9F),
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+    ),
+  );
+
+  Widget _buildSettings(PostProvider provider) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _section(
+        'Who can see this?',
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+          children: [
+            const Text(
+              'Choose an audience for this post.',
+              style: TextStyle(color: AppColors.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<PostVisibility>(
+              initialValue: provider.draftVisibility,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Audience'),
+              items: [
+                for (final visibility in PostVisibility.values)
+                  DropdownMenuItem(
+                    value: visibility,
+                    child: Row(
+                      children: [
+                        Icon(visibility.icon, size: 18, color: AppColors.muted),
+                        const SizedBox(width: 10),
+                        Text(visibility.label),
+                      ],
                     ),
                   ),
-                ),
-                if (action case final Widget actionWidget) actionWidget,
               ],
+              onChanged: (value) {
+                if (value != null) provider.setDraftVisibility(value);
+              },
             ),
-            const SizedBox(height: 10),
-            child,
           ],
         ),
       ),
-    );
-  }
-}
+      const SizedBox(height: 20),
+      _section(
+        'Make it discoverable',
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Add a topic to your story.',
+              style: TextStyle(color: AppColors.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            _suggestions(_hashtags),
+            const Divider(height: 32),
+            Text(
+              'Bring someone in',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Mention someone in your post.',
+              style: TextStyle(color: AppColors.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            _suggestions(_mentions),
+          ],
+        ),
+      ),
+    ],
+  );
 
-class _SuggestionWrap extends StatelessWidget {
-  const _SuggestionWrap({required this.suggestions, required this.onSelected});
+  Widget _section(String title, Widget child) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    ),
+  );
 
-  final List<String> suggestions;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: suggestions.map((String item) {
-        return TweenAnimationBuilder<double>(
-          duration: const Duration(milliseconds: 260),
-          tween: Tween<double>(begin: 0.92, end: 1),
-          builder: (BuildContext context, double value, Widget? child) {
-            return Transform.scale(scale: value, child: child);
+  Widget _suggestions(List<String> suggestions) => Wrap(
+    spacing: 6,
+    runSpacing: 8,
+    children: [
+      for (final suggestion in suggestions)
+        ActionChip(
+          label: Text(
+            suggestion,
+            style: const TextStyle(fontSize: 12, color: AppColors.primary),
+          ),
+          onPressed: () {
+            final selection = _controller.selection;
+            final text = _controller.text;
+            final start = selection.isValid ? selection.start : text.length;
+            final end = selection.isValid ? selection.end : text.length;
+            final prefix = start > 0 && !RegExp(r'\s').hasMatch(text[start - 1])
+                ? ' '
+                : '';
+            final insertion = '$prefix$suggestion ';
+            final updated = text.replaceRange(start, end, insertion);
+            _controller.value = TextEditingValue(
+              text: updated,
+              selection: TextSelection.collapsed(
+                offset: start + insertion.length,
+              ),
+            );
+            context.read<PostProvider>().updateDraftText(updated);
           },
-          child: ActionChip(
-            label: Text(item),
-            backgroundColor: const Color(0xFFE1EDFF),
-            side: const BorderSide(color: Color(0xFFAEC7FF)),
-            onPressed: () => onSelected(item),
+        ),
+    ],
+  );
+
+  Future<void> _submitPost() async {
+    try {
+      final success = await context.read<PostProvider>().submitPost();
+      if (!mounted || !success) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Your post is ready. Thanks for sharing!'),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not save your post. Your draft is still here. Please try again.',
+            ),
           ),
         );
-      }).toList(),
-    );
+      }
+    }
   }
-}
 
-class _UploadProgressCard extends StatelessWidget {
-  const _UploadProgressCard({
-    required this.uploadedCount,
-    required this.totalCount,
-    required this.progress,
-  });
-
-  final int uploadedCount;
-  final int totalCount;
-  final double progress;
-
-  @override
-  Widget build(BuildContext context) {
-    final int safeUploaded = uploadedCount.clamp(0, totalCount);
-    final int percent = (progress * 100).clamp(0, 100).round();
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: <Color>[Color(0xFFFF7A18), Color(0xFFFF3D81)],
-        ),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                const Icon(Icons.cloud_upload_rounded, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Uploading media... $safeUploaded/$totalCount',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                Text(
-                  '$percent%',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: progress.clamp(0, 1),
-                minHeight: 8,
-                backgroundColor: const Color(0x66FFFFFF),
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+  Future<void> _pickMedia() async {
+    try {
+      final status = await context.read<PostProvider>().pickDraftMedia();
+      if (!mounted) return;
+      switch (status) {
+        case MediaPickStatus.success:
+        case MediaPickStatus.cancelled:
+          return;
+        case MediaPickStatus.permissionDenied:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Allow gallery access to choose photos and videos.',
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AnimatedEntry extends StatelessWidget {
-  const _AnimatedEntry({required this.delayMs, required this.child});
-
-  final int delayMs;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      duration: Duration(milliseconds: 420 + delayMs),
-      tween: Tween<double>(begin: 0, end: 1),
-      curve: Curves.easeOutCubic,
-      builder: (BuildContext context, double value, Widget? child) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 12 * (1 - value)),
-            child: child,
+          );
+        case MediaPickStatus.permissionPermanentlyDenied:
+          final openSettings = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Allow gallery access'),
+              content: const Text(
+                'Open app settings to allow access to your photos and videos.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Not now'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Open settings'),
+                ),
+              ],
+            ),
+          );
+          if (openSettings == true) await openAppSettings();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open the gallery. Please try again.'),
           ),
         );
-      },
-      child: child,
-    );
+      }
+    }
+  }
+
+  Future<bool> _showDiscardDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Discard this post?'),
+            content: const Text('Your draft has unsaved changes.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Keep editing'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Discard'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 }

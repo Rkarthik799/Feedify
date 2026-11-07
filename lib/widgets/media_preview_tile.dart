@@ -6,10 +6,16 @@ import 'package:video_player/video_player.dart';
 import '../models/post.dart';
 
 class MediaPreviewTile extends StatelessWidget {
-  const MediaPreviewTile({super.key, required this.media, this.onRemove});
+  const MediaPreviewTile({
+    super.key,
+    required this.media,
+    this.onRemove,
+    this.aspectRatio = 1,
+  });
 
   final PostMedia media;
   final VoidCallback? onRemove;
+  final double aspectRatio;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +26,7 @@ class MediaPreviewTile extends StatelessWidget {
           child: Container(
             color: Colors.grey.shade200,
             child: AspectRatio(
-              aspectRatio: 1,
+              aspectRatio: aspectRatio,
               child: media.type == PostMediaType.image
                   ? _ImagePreview(media: media)
                   : _VideoPreview(media: media),
@@ -31,16 +37,14 @@ class MediaPreviewTile extends StatelessWidget {
           Positioned(
             right: 6,
             top: 6,
-            child: InkWell(
-              onTap: onRemove,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  shape: BoxShape.circle,
-                ),
-                padding: const EdgeInsets.all(4),
-                child: const Icon(Icons.close, size: 16, color: Colors.white),
+            child: IconButton.filled(
+              tooltip: 'Remove attachment',
+              onPressed: onRemove,
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black.withValues(alpha: 0.6),
+                foregroundColor: Colors.white,
               ),
+              icon: const Icon(Icons.close, size: 18),
             ),
           ),
       ],

@@ -6,6 +6,34 @@ enum PostMediaType { image, video }
 
 enum PostMediaSource { file, asset }
 
+class PostComment {
+  const PostComment({
+    required this.id,
+    required this.content,
+    required this.createdAt,
+    this.author = 'You',
+  });
+
+  final String id;
+  final String content;
+  final DateTime createdAt;
+  final String author;
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'content': content,
+    'createdAt': createdAt.toIso8601String(),
+    'author': author,
+  };
+
+  factory PostComment.fromMap(Map<String, dynamic> map) => PostComment(
+    id: map['id'] as String,
+    content: map['content'] as String,
+    createdAt: DateTime.parse(map['createdAt'] as String),
+    author: map['author'] as String? ?? 'You',
+  );
+}
+
 class PostMedia {
   const PostMedia({
     required this.path,
@@ -52,7 +80,7 @@ class Post {
     required this.hashtags,
     required this.mentions,
     this.isLiked = false,
-    this.commentCount = 0,
+    this.comments = const <PostComment>[],
   });
 
   final String id;
@@ -63,7 +91,9 @@ class Post {
   final List<String> hashtags;
   final List<String> mentions;
   final bool isLiked;
-  final int commentCount;
+  final List<PostComment> comments;
+
+  int get commentCount => comments.length;
 
   bool get hasContent => content.trim().isNotEmpty || media.isNotEmpty;
 
@@ -76,7 +106,7 @@ class Post {
     List<String>? hashtags,
     List<String>? mentions,
     bool? isLiked,
-    int? commentCount,
+    List<PostComment>? comments,
   }) {
     return Post(
       id: id ?? this.id,
@@ -87,7 +117,7 @@ class Post {
       hashtags: hashtags ?? this.hashtags,
       mentions: mentions ?? this.mentions,
       isLiked: isLiked ?? this.isLiked,
-      commentCount: commentCount ?? this.commentCount,
+      comments: comments ?? this.comments,
     );
   }
 
@@ -101,7 +131,7 @@ class Post {
       'hashtags': hashtags,
       'mentions': mentions,
       'isLiked': isLiked,
-      'commentCount': commentCount,
+      'comments': comments.map((comment) => comment.toMap()).toList(),
     };
   }
 
@@ -120,7 +150,11 @@ class Post {
       hashtags: List<String>.from(map['hashtags'] as List<dynamic>),
       mentions: List<String>.from(map['mentions'] as List<dynamic>),
       isLiked: map['isLiked'] as bool? ?? false,
-      commentCount: map['commentCount'] as int? ?? 0,
+      comments: List<PostComment>.unmodifiable(
+        (map['comments'] as List<dynamic>? ?? <dynamic>[]).map(
+          (item) => PostComment.fromMap(item as Map<String, dynamic>),
+        ),
+      ),
     );
   }
 
